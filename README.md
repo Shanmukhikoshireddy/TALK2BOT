@@ -109,7 +109,7 @@ Model file: `emotion_model.h5`
 
 ## 🖼️ Screenshot
 
-![screenshot](Output.png)
+![screenshot](Ouput.png)
 
 ---
 
