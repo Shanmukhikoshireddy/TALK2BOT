@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>🎤 Voice Chatbot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            padding: 30px;
+        }
+
+        #chatbox {
+            width: 100%;
+            max-width: 600px;
+            margin: auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0px 0px 10px rgba(0,0,0,0.1);
+        }
+
+        .msg {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+            position: relative;
+        }
+
+        .user {
+            background-color: #d1e7dd;
+            text-align: right;
+        }
+
+        .bot {
+            background-color: #e0ccff; /* light purple */
+            text-align: left;
+        }
+
+        .edit-btn {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            font-size: 12px;
+            cursor: pointer;
+            background: none;
+            border: none;
+            color: #333;
+        }
+
+        .send-edited {
+            display: inline-block;
+            margin-top: 5px;
+            padding: 5px 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        #controls {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #startBtn {
+            background-color: #28a745;
+            color: white;
+        }
+
+        #stopBtn {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        audio {
+            margin-top: 10px;
+            width: 100%;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 8px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="chatbox">
+    <h2>🎤 Voice Chatbot with Emotion Detection</h2>
+    <p style="color: gray; font-size: 14px;">Supports both English and తెలుగు</p>
+
+    <div id="messages"></div>
+
+    <div id="controls">
+        <button id="startBtn">🎙️ Start Talking</button>
+        <button id="stopBtn" disabled>⏹️ Stop</button>
+    </div>
+</div>
+
+<script>
+let recorder, stream, audioChunks = [];
+
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
+const messages = document.getElementById("messages");
+
+startBtn.onclick = async () => {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        recorder.ondataavailable = e => audioChunks.push(e.data);
+
+        recorder.start();
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+    } catch (err) {
+        addMessage("Microphone permission denied or error starting recording.", "bot");
+    }
+};
+
+stopBtn.onclick = () => {
+    stopBtn.disabled = true;
+    recorder.stop();
+    stream.getTracks().forEach(track => track.stop());
+
+    recorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+        const formData = new FormData();
+        formData.append("audio_data", audioBlob, "recording.webm");
+
+        addMessage("Processing...", "bot");
+
+        try {
+            const response = await fetch("/process_audio", {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await response.json();
+
+            messages.lastChild.remove(); // Remove "Processing..."
+
+            const userTextDiv = addMessage(result.text, "user", true);
+            addMessage(result.response, "bot");
+
+            if (result.audio_url) {
+                const audioPlayer = document.createElement("audio");
+                audioPlayer.src = result.audio_url;
+                audioPlayer.controls = true;
+                audioPlayer.autoplay = true;
+                messages.appendChild(audioPlayer);
+            }
+
+        } catch (err) {
+            addMessage("Error: " + err.message, "bot");
+        }
+
+        startBtn.disabled = false;
+    };
+};
+
+function addMessage(text, sender, editable = false) {
+    const msgDiv = document.createElement("div");
+    msgDiv.className = `msg ${sender}`;
+
+    if (editable && sender === "user") {
+        msgDiv.innerHTML = `
+            <span>${text}</span>
+            <button class="edit-btn">✏️</button>
+        `;
+        msgDiv.querySelector(".edit-btn").onclick = () => makeEditable(msgDiv, text);
+    } else {
+        msgDiv.textContent = text;
+    }
+
+    messages.appendChild(msgDiv);
+    return msgDiv;
+}
+
+function makeEditable(div, originalText) {
+    div.innerHTML = `
+        <textarea rows="2">${originalText}</textarea>
+        <button class="send-edited">Send</button>
+    `;
+
+    div.querySelector(".send-edited").onclick = async () => {
+        const newText = div.querySelector("textarea").value.trim();
+        if (!newText) return;
+
+        div.textContent = "Updating...";
+        try {
+            const response = await fetch("/regenerate", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ text: newText })
+            });
+            const result = await response.json();
+
+            // Replace user message
+            div.innerHTML = `
+                <span>${newText}</span>
+                <button class="edit-btn">✏️</button>
+            `;
+            div.querySelector(".edit-btn").onclick = () => makeEditable(div, newText);
+
+            // Append new bot message and audio
+            addMessage(result.response, "bot");
+            addMessage(`🌐 Detected language: ${result.language}, 😊 Emotion: ${result.emotion}`, "bot");
+
+
+            if (result.audio_url) {
+                const audioPlayer = document.createElement("audio");
+                audioPlayer.src = result.audio_url;
+                audioPlayer.controls = true;
+                audioPlayer.autoplay = true;
+                messages.appendChild(audioPlayer);
+            }
+        } catch (err) {
+            div.innerHTML = `<span>${originalText}</span><button class="edit-btn">✏️</button>`;
+            alert("Error regenerating response.");
+        }
+    };
+}
+</script>
+
+</body>
+</html>
