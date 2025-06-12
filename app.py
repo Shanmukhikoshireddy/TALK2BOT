@@ -23,7 +23,7 @@ print("✅ Emotion model loaded.")
 
 label_map_inv = {0: 'angry', 1: 'disgust', 2: 'fear', 3: 'happy', 4: 'neutral', 5: 'ps', 6: 'sad'}
 
-genai.configure(api_key="AIzaSyBHiHJsMxq59LFYlQ9NZVuK7ODsv74EJ3I")
+genai.configure(api_key="your API key here")
 gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 
 def convert_webm_to_wav(webm_path, wav_path):
